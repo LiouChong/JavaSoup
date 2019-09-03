@@ -25,13 +25,21 @@ import java.util.concurrent.Executors;
  */
 public class CSDNSoup {
     public static void main(String[] args) throws IOException, InterruptedException {
-        poolThread();
+        singleThread();
     }
 
+    /**
+     * 多线程搜索
+     *
+     * @throws IOException
+     * @throws InterruptedException
+     */
     private static void poolThread() throws IOException, InterruptedException {
         CSDNSoup csdnSoup = new CSDNSoup();
         String url = "https://bbs.csdn.net/forums/J2EE";
+
         List<List<String>> title = Collections.synchronizedList(new LinkedList<>());
+
         ExecutorService executorService = Executors.newFixedThreadPool(5);
         CountDownLatch countDownLatch = new CountDownLatch(10);
         long start = System.currentTimeMillis();
@@ -45,46 +53,22 @@ public class CSDNSoup {
         executorService.shutdown();
     }
 
-    static class SingleSoup extends Thread{
-        private CSDNSoup csdnSoup;
-        private String url;
-        private Integer i;
-        private List<List<String>> title;
-        private CountDownLatch countDownLatch;
-
-        public SingleSoup(CSDNSoup c, String url, Integer i, List<List<String>> title, CountDownLatch countDownLatch) {
-            this.csdnSoup = c;
-            this.url = url;
-            this.i = i;
-            this.title = title;
-            this.countDownLatch = countDownLatch;
-        }
-
-        @Override
-        public void run() {
-            String pageUrl = csdnSoup.getUrl(url, i);
-            String htmlString = null;
-            try {
-                htmlString = csdnSoup.getHtmlString(pageUrl);
-            } catch (IOException e) {
-                e.printStackTrace();
-            }
-            List<String> pageTitles = csdnSoup.getTitle(htmlString);
-            title.add(pageTitles);
-            System.out.println("已完成第" + (i + 1) + "页");
-            countDownLatch.countDown();
-        }
-    }
-
+    /**
+     * 单线程搜搜
+     *
+     * @throws IOException
+     */
     private static void singleThread() throws IOException {
         CSDNSoup csdnSoup = new CSDNSoup();
         String url = "https://bbs.csdn.net/forums/J2EE";
         List<List<String>> title = new LinkedList<>();
         long start = System.currentTimeMillis();
         for (int i = 0; i < 10; i++) {
+            // i代表页码，依次拼接各个页码的url
             String pageUrl = csdnSoup.getUrl(url, i);
-            String htmlString = null;
-            htmlString = csdnSoup.getHtmlString(pageUrl);
+            // 获取url页面的html
+            String htmlString = csdnSoup.getHtmlString(pageUrl);
+            // 获取html中的目标信息并添加到集合中
             List<String> pageTitles = csdnSoup.getTitle(htmlString);
             title.add(pageTitles);
             System.out.println("已完成第" + (i + 1) + "页");
@@ -93,7 +77,8 @@ public class CSDNSoup {
         System.out.println("共花取" + (end - start));
     }
 
-    private List<String> getTitle(String html) {
+    public List<String> getTitle(String html) {
+        long l = System.currentTimeMillis();
         Document parse = Jsoup.parse(html);
         Elements select = parse.select("td[class=forums_topic]").select("a[class=forums_title]");
         List<String> pageTitleString = new LinkedList<>();
@@ -101,11 +86,34 @@ public class CSDNSoup {
             pageTitleString.add(element.text());
         }
 
+        System.out.println("结束解析-" + (System.currentTimeMillis() - l) );
         return pageTitleString;
     }
 
-    private String getHtmlString(String url) throws IOException {
+    public String getHtmlString(String url) throws IOException {
+        long l = System.currentTimeMillis();
         CloseableHttpClient httpClient = HttpClients.createDefault();
+        HttpGet httpGet = this.getHttpGet(url);
+
+        CloseableHttpResponse response = httpClient.execute(httpGet);
+
+        int statusCode = response.getStatusLine().getStatusCode();
+        String content = "";
+
+        if (statusCode == 200) {
+            HttpEntity entity = response.getEntity();
+            content = EntityUtils.toString(entity);
+
+            EntityUtils.consume(entity);
+        } else {
+            System.out.println("请求失败: " + response.getEntity().getContent() + "-" + statusCode);
+        }
+
+        System.out.println("结束得到html-" + (System.currentTimeMillis() - l));
+        return content;
+    }
+
+    private HttpGet getHttpGet(String url) {
         HttpGet httpGet = new HttpGet(url);
 
         //设置头部信息进行模拟登录（添加登录后的Cookie）
@@ -117,23 +125,10 @@ public class CSDNSoup {
         httpGet.setHeader("User-Agent", "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36" +
                 " (KHTML, like Gecko) Chrome/55.0.2883.87 Safari/537.36");
 
-        CloseableHttpResponse response = httpClient.execute(httpGet);
-
-        int statusCode = response.getStatusLine().getStatusCode();
-        String content = "";
-
-    if (statusCode == 200) {
-        HttpEntity entity = response.getEntity();
-        content = EntityUtils.toString(entity);
-
-        EntityUtils.consume(entity);
-    } else {
-        System.out.println("请求失败: " + response.getEntity().getContent() + "-" + statusCode);
-    }
-        return content;
+        return httpGet;
     }
 
-    private String getUrl(String url, Integer page) {
+    public String getUrl(String url, Integer page) {
         if (page == null || page == 0) {
             return url;
         } else {
